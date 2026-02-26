@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Markdown Quoter</title>
+  <style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: system-ui, sans-serif;
+    background: linear-gradient(160deg, #f7fbff 0%, #edf5ff 100%);
+    color: #102a43;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  main {
+    width: min(900px, 100%);
+    background: #ffffff;
+    border: 1px solid #d8e1e8;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 12px 30px rgba(16, 42, 67, 0.08);
+  }
+
+  h1 {
+    margin: 0 0 12px;
+    font-size: clamp(1.4rem, 3vw, 2rem);
+  }
+
+  p {
+    margin: 0 0 16px;
+    color: #334e68;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 320px;
+    resize: vertical;
+    font-size: 16px;
+    line-height: 1.5;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #bcccdc;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .error {
+    min-height: 1.25em;
+    margin-top: 10px;
+    color: #b42318;
+  }
+
+  button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 15px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background-color 120ms ease, border-color 120ms ease, transform 80ms ease;
+  }
+
+  button:focus-visible {
+    outline: 2px solid #2f6fed;
+    outline-offset: 2px;
+  }
+
+  button:active {
+    transform: translateY(1px);
+  }
+
+  #apply {
+    background: #0f4c81;
+    color: #ffffff;
+  }
+
+  #apply:hover {
+    background: #0d4575;
+  }
+
+  #remove {
+    background: #b45309;
+    color: #ffffff;
+  }
+
+  #remove:hover {
+    background: #a64b09;
+  }
+
+  #copy {
+    background: #d9e2ec;
+    color: #102a43;
+  }
+
+  #copy:hover {
+    background: #cbd7e2;
+  }
+
+  #copy {
+    margin-left: 24px;
+  }
+
+  #expand {
+    background: transparent;
+    color: #102a43;
+    border-color: #bcccdc;
+  }
+
+  #expand:hover {
+    background: #f8fafc;
+  }
+
+  #expand {
+    margin-left: auto;
+  }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Markdown Quoter</h1>
+    <p>Paste text, then click the button to prefix every line with <code>&gt; </code>.</p>
+    <textarea id="source" placeholder="Enter or paste text here"></textarea>
+    <div class="actions">
+      <button id="apply" type="button">Add Blockquote</button>
+      <button id="remove" type="button">Remove Blockquote</button>
+      <button id="copy" type="button">Copy</button>
+      <button id="expand" type="button">Expand Textbox</button>
+    </div>
+    <p id="error" class="error" aria-live="polite"></p>
+  </main>
+
+  <script type="module">
+const source = document.querySelector('#source');
+const applyButton = document.querySelector('#apply');
+const removeButton = document.querySelector('#remove');
+const expandButton = document.querySelector('#expand');
+const copyButton = document.querySelector('#copy');
+const error = document.querySelector('#error');
+const main = document.querySelector('main');
+
+function addBlockquoteToEachLine(text) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  return text
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join(newline);
+}
+
+function removeBlockquoteFromEachLine(text) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  let lastContentLine = lines.length - 1;
+
+  while (lastContentLine >= 0 && lines[lastContentLine] === '') {
+    lastContentLine -= 1;
+  }
+
+  if (lastContentLine < 0) {
+    return { ok: false, error: 'Nothing to remove.' };
+  }
+
+  for (let i = 0; i <= lastContentLine; i += 1) {
+    if (!/^>\s?/.test(lines[i])) {
+      return {
+        ok: false,
+        error: 'Cannot remove blockquote: every non-trailing line must start with >.',
+      };
+    }
+  }
+
+  for (let i = 0; i <= lastContentLine; i += 1) {
+    lines[i] = lines[i].replace(/^>\s?/, '');
+  }
+
+  return { ok: true, value: lines.join(newline) };
+}
+
+function expandTextboxToViewport() {
+  const bodyStyles = window.getComputedStyle(document.body);
+  const bodyVerticalPadding =
+    parseFloat(bodyStyles.paddingTop) + parseFloat(bodyStyles.paddingBottom);
+  const availableMainHeight = window.innerHeight - bodyVerticalPadding;
+  const nonTextareaHeight = main.offsetHeight - source.offsetHeight;
+  const targetHeight = Math.max(320, availableMainHeight - nonTextareaHeight);
+
+  source.style.height = `${targetHeight}px`;
+}
+
+applyButton.addEventListener('click', () => {
+  error.textContent = '';
+  source.value = addBlockquoteToEachLine(source.value);
+  source.focus();
+});
+
+removeButton.addEventListener('click', () => {
+  const result = removeBlockquoteFromEachLine(source.value);
+  if (!result.ok) {
+    error.textContent = result.error;
+    source.focus();
+    return;
+  }
+
+  error.textContent = '';
+  source.value = result.value;
+  source.focus();
+});
+
+expandButton.addEventListener('click', () => {
+  expandTextboxToViewport();
+  source.focus();
+});
+
+copyButton.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(source.value);
+    error.textContent = 'Copied to clipboard.';
+  } catch {
+    error.textContent = 'Copy failed. Your browser may block clipboard access.';
+  }
+  source.focus();
+});
+  </script>
+</body>
+</html>
