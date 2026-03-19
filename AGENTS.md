@@ -11,6 +11,7 @@ Unless otherwise instructed, follow these standards:
 - Use minimal dependencies.
 - No React or any other frontend framework.
 - Do not worry about supporting old browsers.
+- Include a concise, descriptive title and a concise, descriptive `<meta name="description">` tag
 
 ## Style
 
