@@ -29,6 +29,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: auto;
     background: #ffffff;
     border: 1px solid #d8e1e8;
     border-radius: 12px;
@@ -46,24 +47,113 @@
     color: #334e68;
   }
 
+  a {
+    color: #2680c2;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9em;
+  }
+
+  #about {
+    margin: -8px 0 16px;
+    font-size: 0.875rem;
+    color: #334e68;
+  }
+
+  #about summary {
+    width: fit-content;
+    color: #2680c2;
+    cursor: pointer;
+  }
+
+  #about[open] {
+    padding-bottom: 4px;
+    border-bottom: 1px solid #d8e1e8;
+  }
+
+  #about h2 {
+    margin: 16px 0 6px;
+    font-size: 0.9375rem;
+    color: #102a43;
+  }
+
+  #about p,
+  #about ul {
+    margin: 0 0 8px;
+    max-width: 75ch;
+    line-height: 1.5;
+  }
+
+  #about ul {
+    padding-left: 20px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   #drop-zone {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 16px;
+    flex: 1;
+    min-height: 200px;
+    display: grid;
+    place-items: center;
+    padding: 24px;
     border: 2px dashed #bcccdc;
     border-radius: 8px;
     color: #486581;
+    font-size: 1.125rem;
+    text-align: center;
+    cursor: pointer;
   }
 
-  #drop-zone.dragging {
+  #drop-zone:hover {
     border-color: #2f6fed;
-    background: #f0f6ff;
+    background: #f8fbff;
   }
 
-  input[type="file"] {
-    font-size: 16px;
+  #file:focus-visible + #drop-zone {
+    outline: 2px solid #2f6fed;
+    outline-offset: 2px;
+  }
+
+  #drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    margin: 12px;
+    border: 3px dashed #2f6fed;
+    border-radius: 12px;
+    background: rgba(240, 246, 255, 0.92);
+    color: #0f4c81;
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+
+  #file-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 20px;
+    font-size: 0.875rem;
+  }
+
+  #open-another {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #2680c2;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
   }
 
   .error {
@@ -76,11 +166,7 @@
   }
 
   #summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 20px;
-    margin: 16px 0 0;
-    font-size: 0.875rem;
+    display: contents;
   }
 
   #summary div {
@@ -241,12 +327,48 @@
   <main>
     <h1>Parquet Viewer</h1>
     <p>Open a Parquet file to see its schema and rows. The file is read in your browser and never uploaded.</p>
-    <label id="drop-zone">
-      <input id="file" type="file" accept=".parquet,application/vnd.apache.parquet">
-      <span>or drop a file here</span>
-    </label>
+    <details id="about">
+      <summary>How it works</summary>
+
+      <h2>Your file stays on your device</h2>
+      <p>When you open a file, your browser reads it straight from disk. The viewer reads only the parts it needs: the footer that holds the schema and metadata, then the column data for the rows you scroll to. Nothing is uploaded.</p>
+
+      <h2>The browser enforces it</h2>
+      <p>The page sets a Content Security Policy that blocks all network connections (<code>connect-src 'none'</code>), images and form submissions. The only things it may load are the library files listed below, at exact versions from jsDelivr. Each file also has an integrity hash, and the browser refuses any file whose contents don't match. The policy and the hashes are in the page source.</p>
+      <p>To check for yourself, watch the Network tab in your browser's developer tools while you open a file: no requests appear. Or load this page, go offline, then open a file.</p>
+
+      <h2>Libraries</h2>
+      <ul>
+        <li><a href="https://github.com/hyparam/hyparquet" target="_blank" rel="noopener">hyparquet</a> 1.31.5 reads the Parquet metadata and rows.</li>
+        <li><a href="https://github.com/hyparam/hyparquet-compressors" target="_blank" rel="noopener">hyparquet-compressors</a> 1.1.2 adds decompression for gzip, Brotli, Zstd, LZ4 and Snappy.</li>
+        <li><a href="https://github.com/101arrowz/fzstd" target="_blank" rel="noopener">fzstd</a> 0.1.1 decompresses Zstd.</li>
+        <li><a href="https://github.com/hyparam/hysnappy" target="_blank" rel="noopener">hysnappy</a> 1.1.1 decompresses Snappy using a small WebAssembly module. The module imports nothing, so it can't call any browser API. Compiling it is what <code>'wasm-unsafe-eval'</code> in the policy allows.</li>
+      </ul>
+
+      <h2>What you see</h2>
+      <p>The line above the table shows the file's size, row and column counts, how many row groups the rows are stored in, and the compression used. The table starts with the first 100 rows and loads 100 more each time you scroll near the bottom. Column headers show each column's type.</p>
+      <ul>
+        <li>64-bit integers are shown at full precision.</li>
+        <li>Timestamps are shown in ISO 8601 format to the millisecond, marked as UTC. <code>DATE</code> columns are shown as dates.</li>
+        <li>Binary values are shown as text if they are readable UTF-8, and otherwise as hex: the first 16 bytes and the total length.</li>
+        <li>Lists, structs and maps are shown as JSON.</li>
+        <li>Long values are cut off. Hover over a cell to see all of it.</li>
+      </ul>
+
+      <h2>Limitations</h2>
+      <ul>
+        <li>It's read-only: no filtering, sorting or queries.</li>
+        <li>Supported compression is none, Snappy, gzip, Zstd, Brotli and LZ4. Encrypted files aren't supported.</li>
+        <li>Columns with lists, structs or maps are read a whole row group at a time, so scrolling deep into a very large file with nested columns can be slow.</li>
+      </ul>
+    </details>
+    <input id="file" class="visually-hidden" type="file" accept=".parquet,application/vnd.apache.parquet">
+    <label id="drop-zone" for="file">Drop a Parquet file here, or click to choose one</label>
     <p id="error" class="error" aria-live="polite"></p>
-    <dl id="summary" hidden></dl>
+    <div id="file-info" hidden>
+      <dl id="summary"></dl>
+      <button id="open-another" type="button">Open another file</button>
+    </div>
     <div id="status" hidden></div>
     <div id="table-wrap" hidden>
       <table>
@@ -256,6 +378,7 @@
       <div id="sentinel"></div>
     </div>
   </main>
+  <div id="drop-overlay" hidden>Drop to open</div>
 
   <script type="module" onerror="document.querySelector('#error').textContent = 'Could not load the Parquet reader library. Check your connection and reload.'">
 import { parquetMetadataAsync, parquetReadObjects, parquetSchema } from 'hyparquet';
@@ -266,8 +389,11 @@ const BYTES_PREVIEW_LENGTH = 16;
 
 const fileInput = document.querySelector('#file');
 const dropZone = document.querySelector('#drop-zone');
+const dropOverlay = document.querySelector('#drop-overlay');
 const error = document.querySelector('#error');
+const fileInfo = document.querySelector('#file-info');
 const summary = document.querySelector('#summary');
+const openAnother = document.querySelector('#open-another');
 const status = document.querySelector('#status');
 const tableWrap = document.querySelector('#table-wrap');
 const thead = document.querySelector('thead');
@@ -383,7 +509,6 @@ function renderSummary(file, metadata, columns) {
       return item;
     }),
   );
-  summary.hidden = false;
 }
 
 function renderHeader(columns) {
@@ -476,7 +601,7 @@ async function openFile(file) {
   current = state;
   observer.unobserve(sentinel);
   error.textContent = '';
-  summary.hidden = true;
+  fileInfo.hidden = true;
   status.hidden = true;
   tableWrap.hidden = true;
   thead.replaceChildren();
@@ -485,7 +610,10 @@ async function openFile(file) {
   try {
     state.metadata = await parquetMetadataAsync(buffer);
   } catch (err) {
-    if (state === current) error.textContent = `Could not read Parquet metadata: ${err.message}`;
+    if (state === current) {
+      error.textContent = `Could not read Parquet metadata: ${err.message}`;
+      dropZone.hidden = false;
+    }
     return;
   }
   if (state !== current) return;
@@ -498,6 +626,8 @@ async function openFile(file) {
   }));
   renderSummary(file, state.metadata, state.columns);
   renderHeader(state.columns);
+  dropZone.hidden = true;
+  fileInfo.hidden = false;
   tableWrap.scrollTop = 0;
   tableWrap.scrollLeft = 0;
   tableWrap.hidden = false;
@@ -506,16 +636,24 @@ async function openFile(file) {
 
 fileInput.addEventListener('change', () => {
   const [file] = fileInput.files;
+  // Clearing the input lets choosing the same file again fire another change event.
+  fileInput.value = '';
   if (file) openFile(file);
 });
 
-window.addEventListener('dragover', (event) => event.preventDefault());
-window.addEventListener('drop', (event) => event.preventDefault());
+openAnother.addEventListener('click', () => fileInput.click());
 
-dropZone.addEventListener('dragover', () => dropZone.classList.add('dragging'));
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
-dropZone.addEventListener('drop', (event) => {
-  dropZone.classList.remove('dragging');
+// The overlay covers the whole window while a file is dragged over it, so a drop anywhere opens the file.
+window.addEventListener('dragenter', (event) => {
+  if (event.dataTransfer.types.includes('Files')) dropOverlay.hidden = false;
+});
+dropOverlay.addEventListener('dragleave', () => {
+  dropOverlay.hidden = true;
+});
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', (event) => {
+  event.preventDefault();
+  dropOverlay.hidden = true;
   const [file] = event.dataTransfer.files;
   if (file) openFile(file);
 });
