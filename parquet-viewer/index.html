@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/ https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/ https://cdn.jsdelivr.net/npm/fzstd@0.1.1/esm/ https://cdn.jsdelivr.net/npm/hysnappy@1.1.1/js/; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parquet Viewer</title>
+  <meta name="description" content="View the schema and rows of a local Parquet file in your browser. The file never leaves your device.">
+  <style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    height: 100dvh;
+    font-family: system-ui, sans-serif;
+    background: linear-gradient(160deg, #f7fbff 0%, #edf5ff 100%);
+    color: #102a43;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+  }
+
+  main {
+    width: min(1400px, 100%);
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid #d8e1e8;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 12px 30px rgba(16, 42, 67, 0.08);
+  }
+
+  h1 {
+    margin: 0 0 8px;
+    font-size: clamp(1.4rem, 3vw, 2rem);
+  }
+
+  p {
+    margin: 0 0 16px;
+    color: #334e68;
+  }
+
+  #drop-zone {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px;
+    border: 2px dashed #bcccdc;
+    border-radius: 8px;
+    color: #486581;
+  }
+
+  #drop-zone.dragging {
+    border-color: #2f6fed;
+    background: #f0f6ff;
+  }
+
+  input[type="file"] {
+    font-size: 16px;
+  }
+
+  .error {
+    margin: 12px 0 0;
+    color: #b42318;
+  }
+
+  .error:empty {
+    display: none;
+  }
+
+  #summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin: 16px 0 0;
+    font-size: 0.875rem;
+  }
+
+  #summary div {
+    display: flex;
+    gap: 6px;
+  }
+
+  #summary dt {
+    color: #627d98;
+  }
+
+  #summary dd {
+    margin: 0;
+    font-weight: 500;
+  }
+
+  #status {
+    margin: 12px 0 8px;
+    font-size: 0.875rem;
+    color: #627d98;
+  }
+
+  #table-wrap {
+    flex: 1;
+    min-height: 200px;
+    overflow: auto;
+    border: 1px solid #d8e1e8;
+    border-radius: 8px;
+  }
+
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8125rem;
+  }
+
+  th,
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e4ebf1;
+    border-right: 1px solid #e4ebf1;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  td {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f0f4f8;
+    vertical-align: bottom;
+  }
+
+  th .type {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: normal;
+    color: #627d98;
+  }
+
+  .row-number {
+    position: sticky;
+    left: 0;
+    background: #f8fafc;
+    color: #829ab1;
+    text-align: right;
+  }
+
+  thead .row-number {
+    z-index: 2;
+    background: #f0f4f8;
+  }
+
+  td.num {
+    text-align: right;
+  }
+
+  td.null {
+    color: #9fb3c8;
+    font-style: italic;
+  }
+
+  #sentinel {
+    height: 1px;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+  </style>
+  <!-- Integrity values are base64 SHA-384 digests: curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A -->
+  <script type="importmap">
+  {
+    "imports": {
+      "hyparquet": "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/index.js",
+      "hyparquet-compressors": "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/index.js",
+      "fzstd": "https://cdn.jsdelivr.net/npm/fzstd@0.1.1/esm/index.mjs",
+      "hysnappy": "https://cdn.jsdelivr.net/npm/hysnappy@1.1.1/js/index.js"
+    },
+    "integrity": {
+      "https://cdn.jsdelivr.net/npm/fzstd@0.1.1/esm/index.mjs": "sha384-/9U+PI4QddC9gB4/70Oc1Jky1kqgNYz0C+Bne06NjReFT5QhWw5R7nz2a+sIGmQ9",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/assemble.js": "sha384-sr271WrwkHAvY7eDFgS0IlPioS0AzUNSj114F3M4WViwQ8FXDV9K9c1eoL+j4Yl4",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/bloom.js": "sha384-A/ozgEisyitPZcmFMrmA4R+T8JHXJ2Y5QlWiBZ1NxQ4fbrY5Pn4g8IW9x72goHgc",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/column.js": "sha384-6vcmRxCK6CF8bC3Te2nIvc00GD6llLn4yH5BlElqVvWxC8su2smtTiTfbMAPSkC7",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/constants.js": "sha384-QIzsc7Bg4ZNQ4V1Mbj4jDMq+kJg6jI2Sy8Uymf3/sYKUHaxyOIszwhGnv849kl25",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/convert.js": "sha384-O49CpCNNSgjIm+CVC8VMWhFpIhSFwR27hciNgYZuAzjQ2FWKXyw9pPYVlPSgByqI",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/datapage.js": "sha384-UFGX3s7pwRFp9yjjSkVPUQ+1XZfa2HJ7Tn5FnLCcB8zfQD6wEresbeyYBLf3FjYB",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/delta.js": "sha384-fKcZEv3zAI2+oICMc+9BRKBL3D+JhvV8IdSb9tMzept21qnX7QYzuADyZP/EOPNO",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/encoding.js": "sha384-YJ0Pye12F/UhrD0SBoLMOxENY3gp2ZUsWImYekpkLcrD9GVuVV+ABUhd3gHWp3ky",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/filter.js": "sha384-Shr7wALwBvWcWjHoX/YSKxMaFYAlY/WBvoK+WnKrU+c/UFdA0rCfyosJAgEArrxd",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/geoparquet.js": "sha384-DAd+MG4sHOg9uxpeVnm5JUwCmKFeu43cIr9NwdLPuY1ApT+CplSrPoDOcllIbTdn",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/index.js": "sha384-bnnrelaspLWJADD9nXFX0yJbramUOaRmoqrpxLp1lf2Ih8r6ptKCH6x8yM3piHtl",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/indexes.js": "sha384-vm1Gne22gqCt7kRQnppUErpZ61kjSbWdRBHjc/1KmQyz5ulI6Fl+GuD1Du57oy5v",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/metadata.js": "sha384-X2NKp/SeXQRcSsQ7n8jXoopxFqmGh8/DhTQ7m2x5dLOEKYq4xMLZKz9RO0e00LXI",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/plain.js": "sha384-JdTmxR6Hw9mk6NO0m98As5fXo3LYqzcjQpLQRD2aGuXf8rQp3cmCkpDnLcTN6O3p",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/plan.js": "sha384-0hYDyUnzxYs1AkKkJ0JTzT7wEPzb/WOAo3ERFTPhnRM0flytx3zuewPfHBSXqEMU",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/query.js": "sha384-gj3SFHFAJliqpzzG9k2uv3HZAaYwxbdSE25Cy/NsLn2aqPNq4aDvKvkMtK89yQub",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/read.js": "sha384-NfU9jg9sSTkP8cu2Ixd+ORr/E+f770zQrRc8fj0YWorhExDL075E+y8PAscoMBTH",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/rowgroup.js": "sha384-anu3mOfxYF8aAqhremxQvWbPcA+Asxa9EQ+cD0DDsJcNYUrnJ2RHoYmYZOIakX9b",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/scan.js": "sha384-rjK92jfRhBmfbgEZoEjsChtgeFjZqpKCk8OJicaXqQe+Wm13Ta5ZwRTuiuDFW3Ij",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/schema.js": "sha384-tDd6Fi92hB02D9GEQ1iBiA9+E6K9rnyUVQb/SQeRZghqzOf9kf9sltOH6nD7j65U",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/snappy.js": "sha384-RSmM1bXoBu/wvk2nP6wMOS5yUB36fWJttA3KeQW1t+SDLVGf5L+ZcclOWq+wNgNX",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/thrift.js": "sha384-z14vcS2pFWbEW3vEm5hCv6MZEq4D6HMAzGYCWCgIKvtjAhmEHFxPc2gU5WluAJo6",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/utils.js": "sha384-R5MqzClUaYpnGm8FgQoYXY4wbiUkhnXoRIBj2DpU1LNNgvDTfRZtg7lYdlB94SkE",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/variant.js": "sha384-NNceHkR3m0yIE3v4goH80lBj0/wj5eLkaNOe6sJwG9QlRNweQIBogbeRT3WfoM+D",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/wkb.js": "sha384-3jlEHoJqp7FkuRuc9OML5aqmVNQqjkXjvo4Mk9ZjrKl00epFMIpiEgq+OhFfJij/",
+      "https://cdn.jsdelivr.net/npm/hyparquet@1.31.5/src/xxhash.js": "sha384-YLQwlteHwO3YGCmAT2Cd0LrLkVvE4Hl4epTtWeBArveCfvNZXKFxKC9RdqJl+LVT",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.bitreader.js": "sha384-P1U/VyryUDrv8BWsokFJsncuYEojVeYXx/t7OOindtrdidGAcfCHC3/SC2YJDaeI",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.blocks.js": "sha384-gDwAuiOSprz2BjSE2Cwo/HJGZii1vjJALvra5Y+JOfCbYemPpONsQMKSsQkE55Pl",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.context.js": "sha384-o1s1FF9Mic6h+y1rVZ6Wm6Aib0zvV/7zDAjNY3bculoLWhhS8a7nIcoT763UEohj",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.contextmap.js": "sha384-w37C6KRRBbMQSpUcvqvE5Ca1xjHsgsM7hXlTFtdGrXy0aiFovyNJb/NnjWW7Xh/b",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.dictionary.js": "sha384-0slAdj2HobXw2nWy+ovBdveo0oWXhmmuiwW8JBUbjfz0nl3hHhjPwiEoCOX0h6CB",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.huffman.js": "sha384-WmEECBYt729TCtWz5MNcF4Ba2sS8jB2OtjvkZ5M9sIeTCf5ofRMWduT/LbAgr7uA",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.js": "sha384-+T9OSotbGk1dhLLsHpNgpkVpprWOywcp5bFBG8D2GKHcEb2/8NNA5LQ6214z/hf4",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.prefix.js": "sha384-fHKRGZHsvqbk3T7pZ8Mck223Wsz0wQqv4d8w6Sdvh6wFCAaODcsAbfvfTc6+rXhT",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.streams.js": "sha384-LOLhuFPi86J5F91QtYcxaDV8DYNzBjXPkx3C7oCFUIurymBSY/Q71jyAj4uXTwcM",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/brotli.transform.js": "sha384-odGDOUQre8yKo8WeJ08WdLerwskSlj+0VLv0C1Hnk3KyZBnwK1BwEzLTl7/eNKvH",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/compressors.js": "sha384-/4SXq8jj+LoiL5xx+wQJ1JOxP6qy0oX4AdeX9vJgr6CF4FozKTi0kpAsmokUKWI8",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/gzip.huffman.js": "sha384-teEjzprkepjEfqV4Q740Nn8sptKtaY95iZcSoBM343pcvXBZczbUUab6xFnd9eVU",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/gzip.js": "sha384-09kqrQQJATHQ1jcOQx4B82b3r/QIUaJxtywtlYNhLpQOhElqIfPtPOAfoeFADjkP",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/index.js": "sha384-QbnZdHSsG5x/8YqKUT66Mhwx3V9lRyfFYKUMoMcgozLakJLv6BbHiVvhDKGIfWpF",
+      "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/src/lz4.js": "sha384-hLJkKLx5rDB5qbaSla9As/1r1eT4CyEPtaxB4YF2xRY8XH9KOW1lilQkzFyHh42g",
+      "https://cdn.jsdelivr.net/npm/hysnappy@1.1.1/js/compress.js": "sha384-0CuywIQ5GL3p3h93Ey+0mV/f3qrrluDJZMySs1q10Q19JCiYSYuuDzvkzQIEkF6z",
+      "https://cdn.jsdelivr.net/npm/hysnappy@1.1.1/js/index.js": "sha384-9Mm72GeHM7M1goNZ2tLWKh/5QQ5C1jwxondmLWb5O1B8sKhOhzqzTrgcZ2KAAjQ1",
+      "https://cdn.jsdelivr.net/npm/hysnappy@1.1.1/js/uncompress.js": "sha384-dIsjUQwso0id/4aFoA724oRR7SakYtUiaOqubcO5Ss01nAQSsM4QqMho2youGW5N"
+    }
+  }
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Parquet Viewer</h1>
+    <p>Open a Parquet file to see its schema and rows. The file is read in your browser and never uploaded.</p>
+    <label id="drop-zone">
+      <input id="file" type="file" accept=".parquet,application/vnd.apache.parquet">
+      <span>or drop a file here</span>
+    </label>
+    <p id="error" class="error" aria-live="polite"></p>
+    <dl id="summary" hidden></dl>
+    <div id="status" hidden></div>
+    <div id="table-wrap" hidden>
+      <table>
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+      <div id="sentinel"></div>
+    </div>
+  </main>
+
+  <script type="module" onerror="document.querySelector('#error').textContent = 'Could not load the Parquet reader library. Check your connection and reload.'">
+import { parquetMetadataAsync, parquetReadObjects, parquetSchema } from 'hyparquet';
+import { compressors } from 'hyparquet-compressors';
+
+const BATCH_SIZE = 100;
+const BYTES_PREVIEW_LENGTH = 16;
+
+const fileInput = document.querySelector('#file');
+const dropZone = document.querySelector('#drop-zone');
+const error = document.querySelector('#error');
+const summary = document.querySelector('#summary');
+const status = document.querySelector('#status');
+const tableWrap = document.querySelector('#table-wrap');
+const thead = document.querySelector('thead');
+const tbody = document.querySelector('tbody');
+const sentinel = document.querySelector('#sentinel');
+
+const numberFormat = new Intl.NumberFormat();
+
+let current = null;
+
+const observer = new IntersectionObserver(
+  (entries) => {
+    if (entries.some((entry) => entry.isIntersecting) && current) {
+      loadMore(current);
+    }
+  },
+  { root: tableWrap, rootMargin: '400px' },
+);
+
+function asyncBufferFromFile(file) {
+  return {
+    byteLength: file.size,
+    slice: (start, end) => file.slice(start, end).arrayBuffer(),
+  };
+}
+
+function formatBytes(size) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = size;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit ? value.toFixed(1) : value} ${units[unit]}`;
+}
+
+function columnType({ element, children }) {
+  const logical = element.logical_type;
+  if (logical?.type === 'DECIMAL') return `DECIMAL(${logical.precision}, ${logical.scale})`;
+  if (logical?.type === 'INTEGER') return `${logical.isSigned ? 'INT' : 'UINT'}${logical.bitWidth}`;
+  if (logical?.type === 'TIMESTAMP' || logical?.type === 'TIME') return `${logical.type}(${logical.unit})`;
+  if (logical) return logical.type;
+  if (element.converted_type) return element.converted_type;
+  if (children.length) return 'STRUCT';
+  return element.type;
+}
+
+function isDateColumn({ element }) {
+  return element.logical_type?.type === 'DATE' || element.converted_type === 'DATE';
+}
+
+function formatDate(date, dateOnly) {
+  if (Number.isNaN(date.getTime())) return 'Invalid Date';
+  const iso = date.toISOString();
+  return dateOnly ? iso.slice(0, 10) : iso;
+}
+
+const strictDecoder = new TextDecoder('utf-8', { fatal: true });
+
+// Byte arrays without a string annotation are shown as text when they are valid, printable UTF-8.
+function formatByteArray(bytes) {
+  try {
+    const text = strictDecoder.decode(bytes);
+    if (!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text)) return text;
+  } catch {
+    // Not UTF-8; fall through to hex.
+  }
+  const hex = Array.from(bytes.subarray(0, BYTES_PREVIEW_LENGTH), (b) => b.toString(16).padStart(2, '0')).join(' ');
+  return bytes.length > BYTES_PREVIEW_LENGTH ? `${hex} … (${bytes.length} bytes)` : hex;
+}
+
+function jsonReplacer(key, value) {
+  const raw = this[key];
+  if (typeof raw === 'bigint') {
+    const number = Number(raw);
+    return Number.isSafeInteger(number) ? number : raw.toString();
+  }
+  if (raw instanceof Date) return formatDate(raw, false);
+  if (raw instanceof Uint8Array) return formatByteArray(raw);
+  return value;
+}
+
+function formatValue(value, column) {
+  if (value instanceof Date) return formatDate(value, column.dateOnly);
+  if (value instanceof Uint8Array) return formatByteArray(value);
+  if (typeof value === 'object') return JSON.stringify(value, jsonReplacer);
+  return String(value);
+}
+
+function renderSummary(file, metadata, columns) {
+  const codecs = new Set(
+    metadata.row_groups.flatMap((group) => group.columns.map((chunk) => chunk.meta_data?.codec).filter(Boolean)),
+  );
+  const items = [
+    ['File', file.name],
+    ['Size', formatBytes(file.size)],
+    ['Rows', numberFormat.format(metadata.num_rows)],
+    ['Columns', numberFormat.format(columns.length)],
+    ['Row groups', numberFormat.format(metadata.row_groups.length)],
+    ['Compression', [...codecs].join(', ') || 'none'],
+  ];
+  if (metadata.created_by) items.push(['Created by', metadata.created_by]);
+
+  summary.replaceChildren(
+    ...items.map(([label, value]) => {
+      const item = document.createElement('div');
+      const dt = document.createElement('dt');
+      const dd = document.createElement('dd');
+      dt.textContent = label;
+      dd.textContent = value;
+      item.append(dt, dd);
+      return item;
+    }),
+  );
+  summary.hidden = false;
+}
+
+function renderHeader(columns) {
+  const row = document.createElement('tr');
+  const corner = document.createElement('th');
+  corner.className = 'row-number';
+  corner.textContent = '#';
+  row.append(corner);
+  for (const column of columns) {
+    const th = document.createElement('th');
+    const type = document.createElement('span');
+    type.className = 'type';
+    type.textContent = column.type;
+    th.append(column.name, type);
+    row.append(th);
+  }
+  thead.replaceChildren(row);
+}
+
+function appendRows(rows, rowStart, columns) {
+  const fragment = document.createDocumentFragment();
+  rows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    const rowNumber = document.createElement('td');
+    rowNumber.className = 'row-number';
+    rowNumber.textContent = numberFormat.format(rowStart + i);
+    tr.append(rowNumber);
+    for (const column of columns) {
+      const td = document.createElement('td');
+      const value = row[column.name];
+      if (value === null || value === undefined) {
+        td.className = 'null';
+        td.textContent = 'null';
+      } else {
+        const text = formatValue(value, column);
+        if (typeof value === 'number' || typeof value === 'bigint') td.className = 'num';
+        td.textContent = text;
+        td.title = text;
+      }
+      tr.append(td);
+    }
+    fragment.append(tr);
+  });
+  tbody.append(fragment);
+}
+
+function updateStatus(state) {
+  const total = numberFormat.format(state.numRows);
+  status.textContent = state.nextRow < state.numRows
+    ? `Showing ${numberFormat.format(state.nextRow)} of ${total} rows. Scroll to load more.`
+    : `Showing all ${total} rows.`;
+  status.hidden = false;
+}
+
+async function loadMore(state) {
+  if (state.loading || state.nextRow >= state.numRows) return;
+  state.loading = true;
+  status.textContent = 'Loading rows…';
+  try {
+    const rowStart = state.nextRow;
+    const rowEnd = Math.min(rowStart + BATCH_SIZE, state.numRows);
+    const rows = await parquetReadObjects({
+      file: state.buffer,
+      metadata: state.metadata,
+      rowStart,
+      rowEnd,
+      compressors,
+      utf8: false,
+      useOffsetIndex: true,
+    });
+    if (state !== current) return;
+    appendRows(rows, rowStart, state.columns);
+    state.nextRow = rowEnd;
+  } catch (err) {
+    if (state !== current) return;
+    error.textContent = `Could not read rows: ${err.message}`;
+    state.nextRow = state.numRows;
+  } finally {
+    state.loading = false;
+  }
+  updateStatus(state);
+  // Re-observing reports the sentinel's current visibility, which loads another batch if it is still on screen.
+  observer.unobserve(sentinel);
+  observer.observe(sentinel);
+}
+
+async function openFile(file) {
+  const buffer = asyncBufferFromFile(file);
+  const state = { buffer, metadata: null, columns: [], numRows: 0, nextRow: 0, loading: false };
+  current = state;
+  observer.unobserve(sentinel);
+  error.textContent = '';
+  summary.hidden = true;
+  status.hidden = true;
+  tableWrap.hidden = true;
+  thead.replaceChildren();
+  tbody.replaceChildren();
+
+  try {
+    state.metadata = await parquetMetadataAsync(buffer);
+  } catch (err) {
+    if (state === current) error.textContent = `Could not read Parquet metadata: ${err.message}`;
+    return;
+  }
+  if (state !== current) return;
+
+  state.numRows = Number(state.metadata.num_rows);
+  state.columns = parquetSchema(state.metadata).children.map((node) => ({
+    name: node.element.name,
+    type: columnType(node),
+    dateOnly: isDateColumn(node),
+  }));
+  renderSummary(file, state.metadata, state.columns);
+  renderHeader(state.columns);
+  tableWrap.scrollTop = 0;
+  tableWrap.scrollLeft = 0;
+  tableWrap.hidden = false;
+  await loadMore(state);
+}
+
+fileInput.addEventListener('change', () => {
+  const [file] = fileInput.files;
+  if (file) openFile(file);
+});
+
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', (event) => event.preventDefault());
+
+dropZone.addEventListener('dragover', () => dropZone.classList.add('dragging'));
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+dropZone.addEventListener('drop', (event) => {
+  dropZone.classList.remove('dragging');
+  const [file] = event.dataTransfer.files;
+  if (file) openFile(file);
+});
+  </script>
+</body>
+</html>
